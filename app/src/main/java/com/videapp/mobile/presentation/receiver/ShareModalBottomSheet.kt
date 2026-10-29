@@ -89,7 +89,8 @@ fun ShareModalBottomSheet(
     onStartDownload: () -> Unit,
     onCancelDownload: () -> Unit,
     onRetry: () -> Unit,
-    onShareFile: (Uri) -> Unit
+    onShareFile: (Uri) -> Unit,
+    onViewVideo: (Uri) -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
 
@@ -149,6 +150,10 @@ fun ShareModalBottomSheet(
                 is ShareUiState.Success -> {
                     SuccessContent(
                         state = uiState,
+                        onViewClicked = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onViewVideo(uiState.mediaStoreUri)
+                        },
                         onShareClicked = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onShareFile(uiState.mediaStoreUri)
@@ -522,6 +527,7 @@ private fun DownloadingContent(
 @Composable
 private fun SuccessContent(
     state: ShareUiState.Success,
+    onViewClicked: () -> Unit,
     onShareClicked: () -> Unit,
     onCloseClicked: () -> Unit
 ) {
@@ -581,7 +587,33 @@ private fun SuccessContent(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Main Button: Compartir Archivo
+        // Primary Button: Ver Video
+        Button(
+            onClick = onViewClicked,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = AccentCyan)
+        ) {
+            Icon(
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = null,
+                tint = SheetBackground,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Ver Video",
+                color = SheetBackground,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Secondary Button: Compartir Archivo
         Button(
             onClick = onShareClicked,
             modifier = Modifier
@@ -607,7 +639,7 @@ private fun SuccessContent(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Secondary Button: Cerrar
+        // Tertiary Button: Cerrar
         OutlinedButton(
             onClick = onCloseClicked,
             modifier = Modifier

@@ -48,8 +48,10 @@
         <activity
             android:name=".presentation.receiver.ShareReceiverActivity"
             android:exported="true"
+            android:taskAffinity=""
             android:excludeFromRecents="true"
-            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:launchMode="singleInstance"
             android:theme="@style/Theme.VideAPP.Transparent"
             android:windowSoftInputMode="adjustNothing">
             <intent-filter>

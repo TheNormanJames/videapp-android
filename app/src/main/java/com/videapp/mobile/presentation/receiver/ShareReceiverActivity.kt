@@ -13,6 +13,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import com.videapp.mobile.presentation.main.MainActivity
 import com.videapp.mobile.presentation.theme.VideAPPTheme
 import kotlinx.coroutines.launch
 
@@ -47,12 +48,13 @@ class ShareReceiverActivity : ComponentActivity() {
                 ShareModalBottomSheet(
                     uiState = uiState,
                     sheetState = sheetState,
-                    onDismiss = { finish() },
+                    onDismiss = { finishAndRemoveTask() },
                     onSelectPreset = { preset -> viewModel.selectPreset(preset) },
                     onStartDownload = { viewModel.startDownload(this@ShareReceiverActivity) },
                     onCancelDownload = { viewModel.cancelDownload(this@ShareReceiverActivity) },
                     onRetry = { viewModel.retry() },
-                    onShareFile = { uri -> shareDownloadedFile(uri) }
+                    onShareFile = { uri -> shareDownloadedFile(uri) },
+                    onViewVideo = { uri -> openVideoInMainActivity(uri) }
                 )
             }
         }
@@ -66,7 +68,7 @@ class ShareReceiverActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null || intent.action != Intent.ACTION_SEND) {
-            finish()
+            finishAndRemoveTask()
             return
         }
 
@@ -74,6 +76,15 @@ class ShareReceiverActivity : ComponentActivity() {
             ?: intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
 
         viewModel.processSharedContent(sharedText)
+    }
+
+    private fun openVideoInMainActivity(uri: Uri) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(MainActivity.EXTRA_TARGET_VIDEO_URI, uri.toString())
+        }
+        startActivity(intent)
+        finishAndRemoveTask()
     }
 
     private fun shareDownloadedFile(uri: Uri) {

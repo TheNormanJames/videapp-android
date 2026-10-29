@@ -1,20 +1,11 @@
 package com.videapp.mobile.domain.repository
 
 import android.net.Uri
+import com.videapp.mobile.domain.model.DownloadedMedia
 import kotlinx.coroutines.flow.Flow
 
-data class MediaItem(
-    val id: Long,
-    val title: String,
-    val contentUri: Uri,
-    val size: Long,
-    val durationMs: Long,
-    val dateAdded: Long,
-    val mimeType: String
-)
-
 interface MediaRepository {
-    fun getDownloadedVideos(): Flow<List<MediaItem>>
+    fun getDownloadedVideos(): Flow<List<DownloadedMedia>>
+    suspend fun refreshVideos(): List<DownloadedMedia>
     suspend fun deleteVideo(uri: Uri): Boolean
 }
-
