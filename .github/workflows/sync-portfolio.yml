@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Android Project
         uses: actions/checkout@v4
 
-      # Node 16 descarga el binario precompilado de node-sass sin compilar Python/C++
+      # Node 16: OpenSSL 1.1 nativo y binario precompilado de node-sass
       - name: Setup Node.js 16 (node-sass native match)
         uses: actions/setup-node@v4
         with:
@@ -36,8 +36,6 @@ jobs:
           if [ -f "docs/VideAPP.jpg" ]; then cp docs/VideAPP.jpg "$TARGET_DIR/"; fi
 
       - name: Install Dependencies & Build Webpack
-        env:
-          NODE_OPTIONS: "--openssl-legacy-provider"
         run: |
           cd gitlab-portfolio
           npm install --legacy-peer-deps
