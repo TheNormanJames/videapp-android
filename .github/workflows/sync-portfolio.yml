@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Android Project
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js (Legacy compatible)
         uses: actions/setup-node@v4
         with:
           node-version: 18
@@ -36,9 +36,9 @@ jobs:
           if [ -f "VideAPP.jpg" ]; then cp VideAPP.jpg "$TARGET_DIR/"; fi
           if [ -f "docs/VideAPP.jpg" ]; then cp docs/VideAPP.jpg "$TARGET_DIR/"; fi
 
-      - name: Compile Webpack Bundle
+      - name: Install Dependencies & Build Webpack
         env:
-          NODE_OPTIONS: "--openssl-legacy-provider"
+          NODE_OPTIONS: '--openssl-legacy-provider'
         run: |
           cd gitlab-portfolio
           npm install --legacy-peer-deps
