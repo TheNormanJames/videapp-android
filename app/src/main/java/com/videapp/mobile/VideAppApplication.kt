@@ -53,6 +53,15 @@ class VideAppApplication : Application() {
                 FFmpeg.getInstance().init(this@VideAppApplication)
                 _isEngineReady.value = true
                 Log.i(TAG, "youtubedl-android and FFmpeg successfully initialized.")
+
+                // Auto-update yt-dlp binary asynchronously to prevent 403 Forbidden / SABR streaming issues
+                try {
+                    Log.d(TAG, "Checking for yt-dlp updates (Channel: STABLE)...")
+                    val status = YoutubeDL.getInstance().updateYoutubeDL(applicationContext, YoutubeDL.UpdateChannel.STABLE)
+                    Log.i(TAG, "yt-dlp binary update status: $status (Version: ${YoutubeDL.getInstance().version(applicationContext)})")
+                } catch (e: Throwable) {
+                    Log.w(TAG, "yt-dlp auto-update skipped or failed: ${e.message}")
+                }
             } catch (e: YoutubeDLException) {
                 val errorMsg = "Error initializing youtubedl-android: ${e.message}"
                 Log.e(TAG, errorMsg, e)

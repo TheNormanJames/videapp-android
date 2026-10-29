@@ -28,6 +28,9 @@ class MetadataRepositoryImpl : MetadataRepository {
             val request = YoutubeDLRequest(sanitizedUrl).apply {
                 addOption("--no-playlist")
                 addOption("--socket-timeout", "15")
+                addOption("--extractor-args", "youtube:player_client=android,web")
+                addOption("--no-check-certificates")
+                addOption("--no-warnings")
             }
 
             val rawInfo: VideoInfo = YoutubeDL.getInstance().getInfo(request)

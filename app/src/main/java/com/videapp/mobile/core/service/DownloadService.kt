@@ -161,6 +161,9 @@ class DownloadService : Service() {
                     addOption("--no-mtime")
                     addOption("--no-playlist")
                     addOption("--socket-timeout", "20")
+                    addOption("--extractor-args", "youtube:player_client=android,web")
+                    addOption("--no-check-certificates")
+                    addOption("--no-warnings")
 
                     if (!formatId.isNullOrBlank()) {
                         addOption("-f", formatId)
