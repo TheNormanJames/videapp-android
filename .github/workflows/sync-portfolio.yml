@@ -12,7 +12,6 @@ jobs:
       - name: Checkout Android Project
         uses: actions/checkout@v4
 
-      # Node 16: OpenSSL 1.1 nativo y binario precompilado de node-sass
       - name: Setup Node.js 16 (node-sass native match)
         uses: actions/setup-node@v4
         with:
@@ -26,14 +25,21 @@ jobs:
           git config --global user.email "bot@antigravity.ai"
           git clone https://oauth2:${GL_TOKEN}@gitlab.com/NormanJaimes/norman-jaimes.git gitlab-portfolio
 
-      - name: Inject Project Data & Assets
+      - name: Inject Project Data & Copy Assets to Source
         run: |
           node scripts/sync-portfolio.mjs portfolio.json gitlab-portfolio/src/js/data/portFolioData.js
 
-          TARGET_DIR="gitlab-portfolio/public/assets/portafolio"
+          # Inyectar en src/assets/portafolio/ (Fuente de verdad que Webpack copia a public/)
+          TARGET_DIR="gitlab-portfolio/src/assets/portafolio"
           mkdir -p "$TARGET_DIR"
-          if [ -f "VideAPP.jpg" ]; then cp VideAPP.jpg "$TARGET_DIR/"; fi
-          if [ -f "docs/VideAPP.jpg" ]; then cp docs/VideAPP.jpg "$TARGET_DIR/"; fi
+
+          for img in "VideAPP.jpg" "docs/VideAPP.jpg" "assets/VideAPP.jpg"; do
+            if [ -f "$img" ]; then
+              cp "$img" "$TARGET_DIR/VideAPP.jpg"
+              echo "Imagen copiada con éxito a $TARGET_DIR/VideAPP.jpg desde $img"
+              break
+            fi
+          done
 
       - name: Install Dependencies & Build Webpack
         run: |
@@ -48,6 +54,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "Sin cambios tras la compilación."
           else
-            git commit -m "feat(portfolio): auto-sync VideAPP data and rebuild public bundle"
+            git commit -m "feat(portfolio): auto-sync VideAPP assets and rebuild bundle"
             git push origin master
           fi
