@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">VideAPP</string>
+    <string name="share_receiver_title">Descargar con VideAPP</string>
+    <string name="download_channel_name">Descargas en curso</string>
+    <string name="download_channel_desc">Notificaciones sobre el progreso de descarga de videos</string>
+</resources>
+
