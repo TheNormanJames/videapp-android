@@ -11,3 +11,4 @@ data class MainUiState(
     val selectedVideo: DownloadedMedia? = null,
     val errorMessage: String? = null
 )
+
