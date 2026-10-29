@@ -7,15 +7,16 @@ on:
 
 jobs:
   sync-and-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout Android Project
         uses: actions/checkout@v4
 
-      - name: Setup Node.js (Legacy compatible)
+      # Node 16 descarga el binario precompilado de node-sass sin compilar Python/C++
+      - name: Setup Node.js 16 (node-sass native match)
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 16
 
       - name: Clone GitLab Portfolio Repo
         env:
@@ -27,10 +28,8 @@ jobs:
 
       - name: Inject Project Data & Assets
         run: |
-          # Inyectar en src/js/data/portFolioData.js
           node scripts/sync-portfolio.mjs portfolio.json gitlab-portfolio/src/js/data/portFolioData.js
 
-          # Copiar imagen si existe en el repo
           TARGET_DIR="gitlab-portfolio/public/assets/portafolio"
           mkdir -p "$TARGET_DIR"
           if [ -f "VideAPP.jpg" ]; then cp VideAPP.jpg "$TARGET_DIR/"; fi
@@ -38,7 +37,7 @@ jobs:
 
       - name: Install Dependencies & Build Webpack
         env:
-          NODE_OPTIONS: '--openssl-legacy-provider'
+          NODE_OPTIONS: "--openssl-legacy-provider"
         run: |
           cd gitlab-portfolio
           npm install --legacy-peer-deps
