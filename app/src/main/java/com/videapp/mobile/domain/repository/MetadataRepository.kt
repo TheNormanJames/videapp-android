@@ -12,3 +12,4 @@ interface MetadataRepository {
      */
     suspend fun extractMetadata(url: String): Result<VideoMetadata>
 }
+

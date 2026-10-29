@@ -23,3 +23,4 @@ data class FormatOption(
     val isVideo: Boolean = true,
     val isAudioOnly: Boolean = false
 )
+

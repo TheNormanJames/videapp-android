@@ -91,6 +91,9 @@ dependencies {
     implementation("com.google.accompanist:accompanist-permissions:0.36.0")
     implementation("com.guolindev.permissionx:permissionx:1.8.1")
 
+    // Image Loading (Coil for Compose)
+    implementation("io.coil-kt:coil-compose:2.7.0")
+
     // youtubedl-android (Core & FFmpeg)
     implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")

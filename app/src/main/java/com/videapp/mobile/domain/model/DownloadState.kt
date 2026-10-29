@@ -61,3 +61,4 @@ sealed interface DownloadState {
         val cause: Throwable? = null
     ) : DownloadState
 }
+

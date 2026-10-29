@@ -10,12 +10,20 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80,
-    background = DarkBackground,
-    surface = DarkSurface
+private val DarkOledColorScheme = darkColorScheme(
+    primary = AccentCyan,
+    onPrimary = SheetBackground,
+    primaryContainer = CardContainer,
+    onPrimaryContainer = TextPrimary,
+    secondary = ButtonCta,
+    onSecondary = TextPrimary,
+    background = SheetBackground,
+    surface = SheetBackground,
+    surfaceVariant = CardContainer,
+    onSurface = TextPrimary,
+    onSurfaceVariant = TextSecondary,
+    error = ErrorRed,
+    onError = TextPrimary
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -26,8 +34,8 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun VideAPPTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    darkTheme: Boolean = true, // Default to OLED dark theme for media downloader
+    dynamicColor: Boolean = false, // Preserve dedicated high-contrast OLED styling
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -35,7 +43,7 @@ fun VideAPPTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        darkTheme -> DarkColorScheme
+        darkTheme -> DarkOledColorScheme
         else -> LightColorScheme
     }
 
@@ -45,4 +53,3 @@ fun VideAPPTheme(
         content = content
     )
 }
-

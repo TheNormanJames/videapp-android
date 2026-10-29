@@ -112,3 +112,4 @@ class UrlSanitizerTest {
         assertNull(UrlSanitizer.sanitize("Texto aleatorio sin ningún enlace web"))
     }
 }
+
