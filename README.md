@@ -157,3 +157,4 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## 📄 Licencia
 
 Este proyecto está bajo la Licencia MIT. Consulta el archivo `LICENSE` para más detalles.
+
