@@ -25,36 +25,30 @@ jobs:
           git config --global user.email "bot@antigravity.ai"
           git clone https://oauth2:${GL_TOKEN}@gitlab.com/NormanJaimes/norman-jaimes.git gitlab-portfolio
 
-      - name: Inject Project Data & Copy Cover Image
+      - name: Inject Project Data & Assets
         run: |
-          # 1. Inyectar datos en src/js/data/portFolioData.js
+          # Inyectar en src/js/data/portFolioData.js
           node scripts/sync-portfolio.mjs portfolio.json gitlab-portfolio/src/js/data/portFolioData.js
-          
-          # 2. Copiar imagen a la carpeta de assets del portafolio si existe en el repo
-          TARGET_IMG_DIR="gitlab-portfolio/public/assets/portafolio"
-          mkdir -p "$TARGET_IMG_DIR"
-          
-          if [ -f "docs/VideAPP.jpg" ]; then
-            cp docs/VideAPP.jpg "$TARGET_IMG_DIR/"
-          elif [ -f "assets/VideAPP.jpg" ]; then
-            cp assets/VideAPP.jpg "$TARGET_IMG_DIR/"
-          elif [ -f "VideAPP.jpg" ]; then
-            cp VideAPP.jpg "$TARGET_IMG_DIR/"
-          fi
 
-      - name: Install Dependencies & Build Webpack
+          # Copiar imagen si existe en el repo
+          TARGET_DIR="gitlab-portfolio/public/assets/portafolio"
+          mkdir -p "$TARGET_DIR"
+          if [ -f "VideAPP.jpg" ]; then cp VideAPP.jpg "$TARGET_DIR/"; fi
+          if [ -f "docs/VideAPP.jpg" ]; then cp docs/VideAPP.jpg "$TARGET_DIR/"; fi
+
+      - name: Compile Webpack Bundle
         run: |
           cd gitlab-portfolio
           npm install --legacy-peer-deps
           npm run build
 
-      - name: Push Changes (src + public) to GitLab
+      - name: Push All Changes (src + public) to GitLab
         run: |
           cd gitlab-portfolio
           git add src/ public/
           if git diff --staged --quiet; then
-            echo "Sin cambios detectados tras la compilación."
+            echo "Sin cambios tras la compilación."
           else
-            git commit -m "feat(portfolio): auto-sync VideAPP data and build production bundle"
+            git commit -m "feat(portfolio): auto-sync VideAPP data and rebuild public bundle"
             git push origin master
           fi
