@@ -15,7 +15,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 18
 
       - name: Clone GitLab Portfolio Repo
         env:
@@ -37,6 +37,8 @@ jobs:
           if [ -f "docs/VideAPP.jpg" ]; then cp docs/VideAPP.jpg "$TARGET_DIR/"; fi
 
       - name: Compile Webpack Bundle
+        env:
+          NODE_OPTIONS: "--openssl-legacy-provider"
         run: |
           cd gitlab-portfolio
           npm install --legacy-peer-deps
