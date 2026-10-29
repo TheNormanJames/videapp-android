@@ -1,0 +1,44 @@
+{
+  "id": "VideAPP",
+  "titulo": "VideAPP Mobile Downloader",
+  "tituloCorto": "VideAPP Android",
+  "subtitulo": "Descarga Instantánea vía Android Share Sheet con Motor yt-dlp Embebido",
+  "categoria": "fullstack",
+  "destacado": true,
+  "confidencial": false,
+  "rol": "Mobile Software Engineer & Architect",
+  "cliente": "Android Application / Open Source",
+  "ano": "2026",
+  "resumen": "Aplicación nativa para Android optimizada para Samsung Galaxy S22 Ultra, permitiendo descargar videos de YouTube, X, Facebook e Instagram vía Share Sheet sin publicidad.",
+  "casoEstudio": {
+    "problema": "Descargar videos en Android suele requerir aplicaciones saturadas de publicidad invasiva, con cierres forzados por streaming SABR (error HTTP 403) y fallos de permisos con Scoped Storage.",
+    "solucion": "Arquitectura en Kotlin y Jetpack Compose con ShareReceiverActivity translúcida, motor nativo youtubedl-android (ARM64-v8a) con autoactualización asíncrona y almacenamiento público mediante MediaStore API.",
+    "impacto": [
+      "Intercepción fluida en el menú Compartir sin abandonar la aplicación de origen.",
+      "Reproductor nativo integrado con Media3 ExoPlayer y reenvío directo a apps de mensajería.",
+      "Evasión de bloqueos SABR/403 mediante simulación de cliente Android/Web y compatibilidad total con Scoped Storage."
+    ]
+  },
+  "enlaces": {
+    "live": "https://github.com/TheNormanJames/videapp-android/releases/latest",
+    "figmaEmbed": "",
+    "figmaExternal": "",
+    "github": "https://github.com/TheNormanJames/videapp-android"
+  },
+  "galeria": [
+    "VideAPP.jpg"
+  ],
+  "herramientas": [
+    "android",
+    "kotlin"
+  ],
+  "descripcion": "Aplicación nativa Android para descargar videos de redes sociales vía Share Sheet sin anuncios.",
+  "fullDescripcion": "Aplicación nativa de alto rendimiento desarrollada en Kotlin y Jetpack Compose con motor yt-dlp integrado para descarga y gestión directa de videos sin publicidad.",
+  "cargo": "Open Source",
+  "enlace": "https://github.com/TheNormanJames/videapp-android",
+  "itemmejoresproyectos": "native",
+  "portafolioSlider": true,
+  "img": "VideAPP.jpg",
+  "repositorio": "https://github.com/TheNormanJames/videapp-android",
+  "descripcionExtra": ""
+}

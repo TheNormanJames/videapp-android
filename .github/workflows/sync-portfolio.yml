@@ -1,0 +1,41 @@
+name: Sync Project to GitLab Portfolio
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Android Project
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Clone GitLab Portfolio Repo
+        env:
+          GL_TOKEN: ${{ secrets.GITLAB_PORTFOLIO_TOKEN }}
+        run: |
+          git config --global user.name "Antigravity Sync Bot"
+          git config --global user.email "bot@antigravity.ai"
+          git clone https://oauth2:${GL_TOKEN}@gitlab.com/NormanJaimes/norman-jaimes.git gitlab-portfolio
+
+      - name: Inject Project Data
+        run: |
+          node scripts/sync-portfolio.mjs portfolio.json gitlab-portfolio/src/js/data/portFolioData.js
+
+      - name: Push Changes to GitLab (master)
+        run: |
+          cd gitlab-portfolio
+          git add src/js/data/portFolioData.js
+          if git diff --staged --quiet; then
+            echo "Sin cambios detectados."
+          else
+            git commit -m "feat(portfolio): auto-sync VideAPP project from GitHub Actions"
+            git push origin master
+          fi
