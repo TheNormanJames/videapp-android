@@ -1,9 +1,14 @@
 name: Sync Project to GitLab Portfolio
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - 'portfolio.json'
+      - 'docs/portfolio/**'
+      - 'VideAPP.jpg'
+  workflow_dispatch: # Se mantiene como respaldo por si alguna vez quieres lanzarlo a mano
 
 jobs:
   sync-and-build:
@@ -29,17 +34,21 @@ jobs:
         run: |
           node scripts/sync-portfolio.mjs portfolio.json gitlab-portfolio/src/js/data/portFolioData.js
 
-          # Inyectar en src/assets/portafolio/ (Fuente de verdad que Webpack copia a public/)
           TARGET_DIR="gitlab-portfolio/src/assets/portafolio"
           mkdir -p "$TARGET_DIR"
 
+          # 1. Copiar portada de compatibilidad si existe en la raíz
           for img in "VideAPP.jpg" "docs/VideAPP.jpg" "assets/VideAPP.jpg"; do
             if [ -f "$img" ]; then
               cp "$img" "$TARGET_DIR/VideAPP.jpg"
-              echo "Imagen copiada con éxito a $TARGET_DIR/VideAPP.jpg desde $img"
               break
             fi
           done
+
+          # 2. Copiar en lote todas las fotos y capturas de la carpeta estándar
+          if [ -d "docs/portfolio" ]; then
+            cp docs/portfolio/*.{jpg,png,webp,jpeg} "$TARGET_DIR/" 2>/dev/null || true
+          fi
 
       - name: Install Dependencies & Build Webpack
         run: |
@@ -54,6 +63,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "Sin cambios tras la compilación."
           else
-            git commit -m "feat(portfolio): auto-sync VideAPP assets and rebuild bundle"
+            git commit -m "feat(portfolio): auto-sync project data and rebuild bundle"
             git push origin master
           fi
