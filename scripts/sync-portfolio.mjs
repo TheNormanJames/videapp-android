@@ -69,3 +69,4 @@ if (regexProject.test(targetFileContent)) {
 }
 
 fs.writeFileSync(gitlabDataPath, targetFileContent, 'utf-8');
+
