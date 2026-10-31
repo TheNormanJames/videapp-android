@@ -52,6 +52,23 @@ class MediaRepositoryImpl(private val context: Context) : MediaRepository {
         }
     }
 
+    override suspend fun deleteVideos(uris: List<Uri>): Int = withContext(Dispatchers.IO) {
+        var count = 0
+        uris.forEach { uri ->
+            try {
+                if (context.contentResolver.delete(uri, null, null) > 0) {
+                    count++
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error deleting video from MediaStore: $uri", e)
+            }
+        }
+        if (count > 0) {
+            _videosFlow.value = _videosFlow.value.filter { it.contentUri !in uris }
+        }
+        count
+    }
+
     private fun queryVideosInternal(): List<DownloadedMedia> {
         val items = mutableListOf<DownloadedMedia>()
 

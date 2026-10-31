@@ -1,5 +1,7 @@
 package com.videapp.mobile.data.repository
 
+import android.content.Context
+import com.videapp.mobile.VideAppApplication
 import com.videapp.mobile.core.sanitizer.UrlSanitizer
 import com.videapp.mobile.domain.model.FormatOption
 import com.videapp.mobile.domain.model.VideoMetadata
@@ -20,15 +22,22 @@ import java.net.UnknownHostException
  */
 class MetadataRepositoryImpl : MetadataRepository {
 
+    override suspend fun ensureEngineReady(context: Context?) {
+        VideAppApplication.ensureEngineInitialized(context)
+    }
+
     override suspend fun extractMetadata(url: String): Result<VideoMetadata> = withContext(Dispatchers.IO) {
         try {
+            // Defensive idempotent engine initialization for cold starts
+            VideAppApplication.ensureEngineInitialized()
+
             val sanitizedUrl = UrlSanitizer.sanitize(url) ?: url
             val platform = UrlSanitizer.identifyPlatform(sanitizedUrl)
 
             val request = YoutubeDLRequest(sanitizedUrl).apply {
                 addOption("--no-playlist")
                 addOption("--socket-timeout", "15")
-                addOption("--extractor-args", "youtube:player_client=android,web")
+                addOption("--extractor-args", "youtube:player_client=android,web;twitter:api=syndication")
                 addOption("--no-check-certificates")
                 addOption("--no-warnings")
             }

@@ -89,6 +89,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun toggleSelection(uri: Uri) {
+        val currentSet = _uiState.value.selectedUris.toMutableSet()
+        if (currentSet.contains(uri)) {
+            currentSet.remove(uri)
+        } else {
+            currentSet.add(uri)
+        }
+        _uiState.value = _uiState.value.copy(
+            selectedUris = currentSet,
+            isSelectionMode = currentSet.isNotEmpty()
+        )
+    }
+
+    fun selectAll() {
+        val allUris = _uiState.value.videos.map { it.contentUri }.toSet()
+        _uiState.value = _uiState.value.copy(
+            selectedUris = allUris,
+            isSelectionMode = allUris.isNotEmpty()
+        )
+    }
+
+    fun clearSelection() {
+        _uiState.value = _uiState.value.copy(
+            selectedUris = emptySet(),
+            isSelectionMode = false
+        )
+    }
+
+    fun onVideosDeleted(uris: Collection<Uri>) {
+        clearSelection()
+        loadVideos()
+    }
+
+    fun deleteVideos(uris: Collection<Uri>) {
+        viewModelScope.launch {
+            mediaRepository.deleteVideos(uris.toList())
+            clearSelection()
+            loadVideos()
+        }
+    }
+
     fun deleteVideo(media: DownloadedMedia) {
         viewModelScope.launch {
             val success = mediaRepository.deleteVideo(media.contentUri)

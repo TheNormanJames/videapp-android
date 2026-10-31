@@ -87,9 +87,10 @@ object UrlSanitizer {
             var path = uri.path ?: ""
             val query = uri.query
 
-            // 1. Normalize Hostnames
+            // 1. Normalize Hostnames: Force x.com and mobile.twitter.com to twitter.com for reliable extraction
             host = when {
-                host == "mobile.twitter.com" || host == "twitter.com" -> "x.com"
+                host == "mobile.twitter.com" || host == "twitter.com" ||
+                    host == "x.com" || host == "mobile.x.com" || host == "www.x.com" -> "twitter.com"
                 host == "m.facebook.com" || host == "mobile.facebook.com" || host == "web.facebook.com" -> "www.facebook.com"
                 host == "m.youtube.com" -> "www.youtube.com"
                 host == "m.instagram.com" -> "www.instagram.com"

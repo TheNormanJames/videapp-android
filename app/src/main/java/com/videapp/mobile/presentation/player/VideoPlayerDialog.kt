@@ -5,8 +5,11 @@ import android.content.Intent
 import android.net.Uri
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import com.videapp.mobile.core.preferences.AppPreferences
+import com.videapp.mobile.core.worker.DelayedDeleteScheduler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -244,6 +247,11 @@ private fun shareVideo(context: Context, uri: Uri) {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(Intent.createChooser(intent, "Compartir video con..."))
+
+        if (AppPreferences.getInstance(context).autoDeleteAfterShare.value) {
+            DelayedDeleteScheduler.scheduleDelayedDeletion(context, uri)
+            Toast.makeText(context, "Borrado programado tras compartir", Toast.LENGTH_SHORT).show()
+        }
     } catch (e: Exception) {
         // Fallback
     }

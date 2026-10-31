@@ -1,16 +1,22 @@
 package com.videapp.mobile.presentation.main
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,11 +38,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -44,10 +57,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -73,6 +84,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.videapp.mobile.core.preferences.AppPreferences
+import com.videapp.mobile.core.worker.DelayedDeleteScheduler
 import com.videapp.mobile.domain.model.DownloadedMedia
 import com.videapp.mobile.presentation.player.VideoPlayerDialog
 import com.videapp.mobile.presentation.receiver.ShareModalBottomSheet
@@ -81,6 +94,7 @@ import com.videapp.mobile.presentation.theme.AccentCyan
 import com.videapp.mobile.presentation.theme.ButtonCta
 import com.videapp.mobile.presentation.theme.CardContainer
 import com.videapp.mobile.presentation.theme.CardContainerLight
+import com.videapp.mobile.presentation.theme.ErrorRed
 import com.videapp.mobile.presentation.theme.SheetBackground
 import com.videapp.mobile.presentation.theme.TextPrimary
 import com.videapp.mobile.presentation.theme.TextSecondary
@@ -88,8 +102,8 @@ import com.videapp.mobile.presentation.theme.VideAPPTheme
 import kotlinx.coroutines.launch
 
 /**
- * Main Activity hosting the FastDownloader Media Library, Manual URL Downloader,
- * and Integrated Media3 ExoPlayer.
+ * Main Activity hosting the FastDownloader Media Library, Multi-selection Gallery,
+ * Scoped Storage Batch Deletion, In-app Manual URL Downloader, and ExoPlayer.
  */
 class MainActivity : ComponentActivity() {
 
@@ -99,6 +113,18 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private val shareViewModel: ShareViewModel by viewModels()
+
+    private var pendingDeleteUris: List<Uri> = emptyList()
+
+    // Activity result launcher for Scoped Storage batch and individual delete requests (Android 11+ / API 30+)
+    private val deleteRequestLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            viewModel.onVideosDeleted(pendingDeleteUris)
+            Toast.makeText(this, "Elemento(s) eliminado(s) de la biblioteca", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -114,6 +140,7 @@ class MainActivity : ComponentActivity() {
 
                 var showAddUrlDialog by remember { mutableStateOf(false) }
                 var showDownloadSheet by remember { mutableStateOf(false) }
+                var showSettingsDialog by remember { mutableStateOf(false) }
 
                 val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
                 val scope = rememberCoroutineScope()
@@ -122,10 +149,32 @@ class MainActivity : ComponentActivity() {
                     uiState = uiState,
                     onRefresh = { viewModel.loadVideos() },
                     onAddUrlClick = { showAddUrlDialog = true },
-                    onVideoClick = { media -> viewModel.selectVideo(media) },
+                    onOpenSettings = { showSettingsDialog = true },
+                    onVideoClick = { media ->
+                        if (uiState.isSelectionMode) {
+                            viewModel.toggleSelection(media.contentUri)
+                        } else {
+                            viewModel.selectVideo(media)
+                        }
+                    },
+                    onVideoLongClick = { media ->
+                        viewModel.toggleSelection(media.contentUri)
+                    },
+                    onToggleSelection = { uri -> viewModel.toggleSelection(uri) },
+                    onSelectAll = { viewModel.selectAll() },
+                    onClearSelection = { viewModel.clearSelection() },
+                    onShareSelected = { shareMultipleVideos(uiState.selectedUris.toList()) },
+                    onDeleteSelected = { requestDeleteVideos(uiState.selectedUris.toList()) },
                     onClosePlayer = { viewModel.selectVideo(null) },
-                    onDeleteVideo = { media -> viewModel.deleteVideo(media) }
+                    onDeleteVideo = { media -> requestDeleteVideos(listOf(media.contentUri)) }
                 )
+
+                // Settings Dialog
+                if (showSettingsDialog) {
+                    SettingsDialog(
+                        onDismiss = { showSettingsDialog = false }
+                    )
+                }
 
                 // Manual URL Input Dialog
                 if (showAddUrlDialog) {
@@ -189,6 +238,31 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Executes single or batch deletion compatible with Scoped Storage (Android 11+ / API 30+)
+     * using MediaStore.createDeleteRequest and ActivityResultContracts.StartIntentSenderForResult.
+     */
+    private fun requestDeleteVideos(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        pendingDeleteUris = uris
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val pendingIntent = MediaStore.createDeleteRequest(contentResolver, uris)
+                val intentSenderRequest = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                deleteRequestLauncher.launch(intentSenderRequest)
+            } catch (e: Exception) {
+                // Fallback direct delete
+                viewModel.deleteVideos(uris)
+            }
+        } else {
+            viewModel.deleteVideos(uris)
+        }
+    }
+
+    /**
+     * Shares a single media file with ACTION_SEND and schedules delayed deletion if enabled.
+     */
     private fun shareDownloadedFile(uri: Uri) {
         try {
             val mime = contentResolver.getType(uri) ?: "video/*"
@@ -198,8 +272,37 @@ class MainActivity : ComponentActivity() {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             startActivity(Intent.createChooser(shareIntent, "Compartir video con..."))
+
+            if (AppPreferences.getInstance(this).autoDeleteAfterShare.value) {
+                DelayedDeleteScheduler.scheduleDelayedDeletion(this, uri)
+                Toast.makeText(this, "Borrado diferido programado tras compartir", Toast.LENGTH_SHORT).show()
+            }
         } catch (e: Exception) {
             Toast.makeText(this, "Error al compartir archivo: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Shares multiple media files with ACTION_SEND_MULTIPLE and schedules delayed deletions if enabled.
+     */
+    private fun shareMultipleVideos(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        try {
+            val shareIntent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "video/*"
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(shareIntent, "Compartir ${uris.size} videos con..."))
+
+            if (AppPreferences.getInstance(this).autoDeleteAfterShare.value) {
+                uris.forEach { uri ->
+                    DelayedDeleteScheduler.scheduleDelayedDeletion(this, uri)
+                }
+                Toast.makeText(this, "Borrado programado para ${uris.size} video(s)", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error al compartir videos: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 }
@@ -210,89 +313,154 @@ fun MainGalleryScreen(
     uiState: MainUiState,
     onRefresh: () -> Unit,
     onAddUrlClick: () -> Unit,
+    onOpenSettings: () -> Unit,
     onVideoClick: (DownloadedMedia) -> Unit,
+    onVideoLongClick: (DownloadedMedia) -> Unit,
+    onToggleSelection: (Uri) -> Unit,
+    onSelectAll: () -> Unit,
+    onClearSelection: () -> Unit,
+    onShareSelected: () -> Unit,
+    onDeleteSelected: () -> Unit,
     onClosePlayer: () -> Unit,
     onDeleteVideo: (DownloadedMedia) -> Unit
 ) {
     Scaffold(
         containerColor = SheetBackground,
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(AccentCyan.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
-                        ) {
+            if (uiState.isSelectionMode) {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = onClearSelection) {
                             Icon(
-                                imageVector = Icons.Default.FileDownload,
-                                contentDescription = null,
-                                tint = AccentCyan,
-                                modifier = Modifier.size(20.dp)
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Cancelar selección",
+                                tint = TextPrimary
                             )
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "VideAPP",
-                                color = TextPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp
-                            )
-                            Text(
-                                text = "Biblioteca FastDownloader",
-                                color = TextSecondary,
-                                fontSize = 11.sp
+                    },
+                    title = {
+                        Text(
+                            text = "${uiState.selectedUris.size} seleccionados",
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                    },
+                    actions = {
+                        IconButton(onClick = onSelectAll) {
+                            Icon(
+                                imageVector = Icons.Default.SelectAll,
+                                contentDescription = "Seleccionar todos",
+                                tint = TextPrimary
                             )
                         }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onAddUrlClick) {
-                        Icon(
-                            imageVector = Icons.Default.Link,
-                            contentDescription = "Pegar enlace",
-                            tint = AccentCyan
-                        )
-                    }
-                    IconButton(onClick = onRefresh) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refrescar",
-                            tint = TextSecondary
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SheetBackground,
-                    titleContentColor = TextPrimary
+                        IconButton(onClick = onShareSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Compartir seleccionados",
+                                tint = AccentCyan
+                            )
+                        }
+                        IconButton(onClick = onDeleteSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Eliminar seleccionados",
+                                tint = ErrorRed
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = SheetBackground,
+                        titleContentColor = TextPrimary
+                    )
                 )
-            )
+            } else {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(AccentCyan.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FileDownload,
+                                    contentDescription = null,
+                                    tint = AccentCyan,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "VideAPP",
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp
+                                )
+                                Text(
+                                    text = "Biblioteca FastDownloader",
+                                    color = TextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Configuración",
+                                tint = TextSecondary
+                            )
+                        }
+                        IconButton(onClick = onAddUrlClick) {
+                            Icon(
+                                imageVector = Icons.Default.Link,
+                                contentDescription = "Pegar enlace",
+                                tint = AccentCyan
+                            )
+                        }
+                        IconButton(onClick = onRefresh) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refrescar",
+                                tint = TextSecondary
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = SheetBackground,
+                        titleContentColor = TextPrimary
+                    )
+                )
+            }
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onAddUrlClick,
-                containerColor = ButtonCta,
-                contentColor = TextPrimary,
-                shape = RoundedCornerShape(16.dp),
-                icon = {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Descargar por URL",
-                        modifier = Modifier.size(22.dp)
-                    )
-                },
-                text = {
-                    Text(
-                        text = "Pegar Enlace",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                }
-            )
+            if (!uiState.isSelectionMode) {
+                ExtendedFloatingActionButton(
+                    onClick = onAddUrlClick,
+                    containerColor = ButtonCta,
+                    contentColor = TextPrimary,
+                    shape = RoundedCornerShape(16.dp),
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Descargar por URL",
+                            modifier = Modifier.size(22.dp)
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "Pegar Enlace",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                )
+            }
         }
     ) { innerPadding ->
         Box(
@@ -314,7 +482,10 @@ fun MainGalleryScreen(
                 else -> {
                     VideoGridContent(
                         videos = uiState.videos,
-                        onVideoClick = onVideoClick
+                        selectedUris = uiState.selectedUris,
+                        isSelectionMode = uiState.isSelectionMode,
+                        onVideoClick = onVideoClick,
+                        onVideoLongClick = onVideoLongClick
                     )
                 }
             }
@@ -445,7 +616,10 @@ private fun EmptyGalleryState(
 @Composable
 private fun VideoGridContent(
     videos: List<DownloadedMedia>,
-    onVideoClick: (DownloadedMedia) -> Unit
+    selectedUris: Set<Uri>,
+    isSelectionMode: Boolean,
+    onVideoClick: (DownloadedMedia) -> Unit,
+    onVideoLongClick: (DownloadedMedia) -> Unit
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -455,28 +629,44 @@ private fun VideoGridContent(
         modifier = Modifier.fillMaxSize()
     ) {
         items(videos, key = { it.id }) { video ->
+            val isSelected = selectedUris.contains(video.contentUri)
             VideoCardItem(
                 media = video,
-                onClick = { onVideoClick(video) }
+                isSelected = isSelected,
+                isSelectionMode = isSelectionMode,
+                onClick = { onVideoClick(video) },
+                onLongClick = { onVideoLongClick(video) }
             )
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun VideoCardItem(
     media: DownloadedMedia,
-    onClick: () -> Unit
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val borderColor = if (isSelected) AccentCyan else CardContainerLight
+    val borderWidth = if (isSelected) 2.dp else 1.dp
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clip(RoundedCornerShape(14.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = CardContainer),
-        border = BorderStroke(1.dp, CardContainerLight)
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) CardContainer.copy(alpha = 0.9f) else CardContainer
+        ),
+        border = BorderStroke(borderWidth, borderColor)
     ) {
         Column {
             // Thumbnail container 16:9
@@ -496,21 +686,49 @@ private fun VideoCardItem(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Play overlay icon
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .align(Alignment.Center)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = TextPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
+                // Selection checkmark or play overlay icon
+                if (isSelectionMode) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(if (isSelected) AccentCyan else Color.Black.copy(alpha = 0.6f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Seleccionado",
+                                tint = SheetBackground,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Outlined.Circle,
+                                contentDescription = "No seleccionado",
+                                tint = TextSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .align(Alignment.Center)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.5f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = TextPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
 
                 // Duration Badge
@@ -541,7 +759,7 @@ private fun VideoCardItem(
             ) {
                 Text(
                     text = media.displayName,
-                    color = TextPrimary,
+                    color = if (isSelected) AccentCyan else TextPrimary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 2,

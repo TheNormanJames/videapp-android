@@ -1,5 +1,6 @@
 package com.videapp.mobile.presentation.main
 
+import android.net.Uri
 import com.videapp.mobile.domain.model.DownloadedMedia
 
 /**
@@ -9,6 +10,8 @@ data class MainUiState(
     val isLoading: Boolean = true,
     val videos: List<DownloadedMedia> = emptyList(),
     val selectedVideo: DownloadedMedia? = null,
+    val selectedUris: Set<Uri> = emptySet(),
+    val isSelectionMode: Boolean = false,
     val errorMessage: String? = null
 )
 

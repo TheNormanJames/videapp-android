@@ -8,4 +8,5 @@ interface MediaRepository {
     fun getDownloadedVideos(): Flow<List<DownloadedMedia>>
     suspend fun refreshVideos(): List<DownloadedMedia>
     suspend fun deleteVideo(uri: Uri): Boolean
+    suspend fun deleteVideos(uris: List<Uri>): Int
 }

@@ -13,6 +13,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import com.videapp.mobile.core.preferences.AppPreferences
+import com.videapp.mobile.core.worker.DelayedDeleteScheduler
 import com.videapp.mobile.presentation.main.MainActivity
 import com.videapp.mobile.presentation.theme.VideAPPTheme
 import kotlinx.coroutines.launch
@@ -96,6 +98,12 @@ class ShareReceiverActivity : ComponentActivity() {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             startActivity(Intent.createChooser(shareIntent, "Compartir video con..."))
+
+            // Trigger adaptive delayed delete if enabled in settings
+            if (AppPreferences.getInstance(this).autoDeleteAfterShare.value) {
+                DelayedDeleteScheduler.scheduleDelayedDeletion(this, uri)
+                Toast.makeText(this, "Borrado programado tras compartir", Toast.LENGTH_SHORT).show()
+            }
         } catch (e: Exception) {
             Toast.makeText(this, "Error al compartir archivo: ${e.message}", Toast.LENGTH_SHORT).show()
         }

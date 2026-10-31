@@ -49,15 +49,15 @@ class UrlSanitizerTest {
     }
 
     @Test
-    fun `sanitize Twitter and X normalizes domain to x_com and strips share trackers`() {
+    fun `sanitize Twitter and X normalizes domain to twitter_com and strips share trackers`() {
         val rawTwitter = "https://twitter.com/NASA/status/1234567890123456789?s=20&t=k1234XYZ"
         val sanitizedTwitter = UrlSanitizer.sanitize(rawTwitter)
-        assertEquals("https://x.com/NASA/status/1234567890123456789", sanitizedTwitter)
+        assertEquals("https://twitter.com/NASA/status/1234567890123456789", sanitizedTwitter)
         assertEquals(SocialPlatform.TWITTER_X, UrlSanitizer.identifyPlatform(sanitizedTwitter!!))
 
         val rawX = "https://x.com/SpaceX/status/9876543210?s=46"
         val sanitizedX = UrlSanitizer.sanitize(rawX)
-        assertEquals("https://x.com/SpaceX/status/9876543210", sanitizedX)
+        assertEquals("https://twitter.com/SpaceX/status/9876543210", sanitizedX)
     }
 
     @Test
@@ -101,7 +101,7 @@ class UrlSanitizerTest {
     fun `sanitize handles trailing punctuation smoothly`() {
         val sharedText = "Visita (https://x.com/NASA/status/1122334455?s=20)."
         val sanitized = UrlSanitizer.sanitize(sharedText)
-        assertEquals("https://x.com/NASA/status/1122334455", sanitized)
+        assertEquals("https://twitter.com/NASA/status/1122334455", sanitized)
     }
 
     @Test

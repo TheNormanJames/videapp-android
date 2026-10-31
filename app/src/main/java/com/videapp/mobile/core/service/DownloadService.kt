@@ -14,9 +14,11 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.videapp.mobile.R
 import com.videapp.mobile.VideAppApplication
+import com.videapp.mobile.core.compression.VideoCompressorMiddleware
 import com.videapp.mobile.core.sanitizer.UrlSanitizer
 import com.videapp.mobile.data.mediastore.MediaStoreManager
 import com.videapp.mobile.domain.model.DownloadState
+import com.videapp.mobile.domain.repository.DownloadRepository
 import com.videapp.mobile.presentation.main.MainActivity
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLException
@@ -156,21 +158,26 @@ class DownloadService : Service() {
 
         activeDownloadJob = serviceScope.launch {
             try {
+                // Defensive check to ensure engine is initialized on cold-start
+                VideAppApplication.ensureEngineInitialized(applicationContext)
+
                 val request = YoutubeDLRequest(sanitizedUrl).apply {
                     addOption("-o", outputTemplate)
                     addOption("--no-mtime")
                     addOption("--no-playlist")
                     addOption("--socket-timeout", "20")
-                    addOption("--extractor-args", "youtube:player_client=android,web")
+                    addOption("--extractor-args", "youtube:player_client=android,web;twitter:api=syndication")
                     addOption("--no-check-certificates")
                     addOption("--no-warnings")
 
                     if (!formatId.isNullOrBlank()) {
                         addOption("-f", formatId)
                     } else {
-                        // High quality video+audio auto merge
-                        addOption("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best")
+                        // Default 720p resolution limit
+                        addOption("-f", DownloadRepository.DEFAULT_FORMAT_720P)
                     }
+                    // Sort criteria forcing max 720p, 30fps, h264
+                    addOption("-S", DownloadRepository.DEFAULT_SORT_720P)
                 }
 
                 Log.d(TAG, "Starting YoutubeDL execution for task $taskId: $sanitizedUrl")
@@ -212,12 +219,12 @@ class DownloadService : Service() {
 
                 if (isCancelledByUser) return@launch
 
-                // Post-processing / saving to MediaStore
-                _downloadState.value = DownloadState.Processing(taskId, "Guardando en galería pública...")
+                // Post-processing / compression / saving to MediaStore
+                _downloadState.value = DownloadState.Processing(taskId, "Procesando y optimizando video...")
                 val processingNotification = buildProgressNotification(
                     taskId = taskId,
                     title = videoTitle,
-                    contentText = "Guardando en almacenamiento público...",
+                    contentText = "Procesando video para almacenamiento público...",
                     progress = 100,
                     indeterminate = true
                 )
@@ -227,12 +234,20 @@ class DownloadService : Service() {
                 val targetFile = downloadedFiles?.firstOrNull()
 
                 if (targetFile != null && targetFile.exists()) {
-                    val cleanDisplayName = targetFile.name.replace("-$taskId", "")
-                    val extension = targetFile.extension.lowercase()
+                    // Apply VideoCompressorMiddleware if enabled in preferences
+                    val processedFile = VideoCompressorMiddleware.compressIfNeeded(
+                        context = applicationContext,
+                        sourceFile = targetFile
+                    )
+
+                    val cleanDisplayName = processedFile.name
+                        .replace("-$taskId", "")
+                        .replace("compressed_", "")
+                    val extension = processedFile.extension.lowercase()
                     val mimeType = if (extension == "mp3" || extension == "m4a") "audio/$extension" else "video/$extension"
 
                     val mediaStoreResult = mediaStoreManager.saveVideoToMediaStore(
-                        sourceFile = targetFile,
+                        sourceFile = processedFile,
                         displayName = cleanDisplayName,
                         mimeType = mimeType
                     )

@@ -3,6 +3,7 @@ package com.videapp.mobile
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 import android.os.Build
 import android.util.Log
 import coil.ImageLoader
@@ -18,6 +19,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Custom Application class for VideAPP.
@@ -41,15 +44,52 @@ class VideAppApplication : Application(), ImageLoaderFactory {
         private const val TAG = "VideAppApplication"
         const val DOWNLOAD_CHANNEL_ID = "videapp_downloads_channel"
 
+        lateinit var instance: VideAppApplication
+            private set
+
         private val _isEngineReady = MutableStateFlow(false)
         val isEngineReady: StateFlow<Boolean> = _isEngineReady.asStateFlow()
 
         private val _engineInitError = MutableStateFlow<String?>(null)
         val engineInitError: StateFlow<String?> = _engineInitError.asStateFlow()
+
+        private val initMutex = Mutex()
+
+        /**
+         * Defensive, idempotent engine initialization.
+         * Ensures YoutubeDL and FFmpeg are initialized before metadata extraction or download,
+         * resolving cold-start race conditions when triggered from ShareReceiverActivity.
+         */
+        suspend fun ensureEngineInitialized(context: Context? = null) {
+            if (_isEngineReady.value) return
+            initMutex.withLock {
+                if (_isEngineReady.value) return@withLock
+                val ctx = context?.applicationContext ?: instance.applicationContext
+                try {
+                    Log.d(TAG, "Idempotent initialization of YoutubeDL and FFmpeg engines...")
+                    YoutubeDL.getInstance().init(ctx)
+                    FFmpeg.getInstance().init(ctx)
+                    _isEngineReady.value = true
+                    _engineInitError.value = null
+                    Log.i(TAG, "YoutubeDL and FFmpeg successfully initialized.")
+                } catch (e: YoutubeDLException) {
+                    val errorMsg = "Error initializing youtubedl-android: ${e.message}"
+                    Log.e(TAG, errorMsg, e)
+                    _engineInitError.value = errorMsg
+                    throw e
+                } catch (e: Throwable) {
+                    val errorMsg = "Unexpected error initializing engine: ${e.message}"
+                    Log.e(TAG, errorMsg, e)
+                    _engineInitError.value = errorMsg
+                    throw e
+                }
+            }
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         createNotificationChannels()
         initYoutubeDLEngine()
     }
@@ -60,11 +100,7 @@ class VideAppApplication : Application(), ImageLoaderFactory {
     private fun initYoutubeDLEngine() {
         applicationScope.launch {
             try {
-                Log.d(TAG, "Initializing youtubedl-android engine in background thread...")
-                YoutubeDL.getInstance().init(this@VideAppApplication)
-                FFmpeg.getInstance().init(this@VideAppApplication)
-                _isEngineReady.value = true
-                Log.i(TAG, "youtubedl-android and FFmpeg successfully initialized.")
+                ensureEngineInitialized(this@VideAppApplication)
 
                 // Auto-update yt-dlp binary asynchronously to prevent 403 Forbidden / SABR streaming issues
                 try {
@@ -74,14 +110,8 @@ class VideAppApplication : Application(), ImageLoaderFactory {
                 } catch (e: Throwable) {
                     Log.w(TAG, "yt-dlp auto-update skipped or failed: ${e.message}")
                 }
-            } catch (e: YoutubeDLException) {
-                val errorMsg = "Error initializing youtubedl-android: ${e.message}"
-                Log.e(TAG, errorMsg, e)
-                _engineInitError.value = errorMsg
             } catch (e: Throwable) {
-                val errorMsg = "Unexpected error initializing engine: ${e.message}"
-                Log.e(TAG, errorMsg, e)
-                _engineInitError.value = errorMsg
+                Log.w(TAG, "Engine background init encountered issue: ${e.message}")
             }
         }
     }

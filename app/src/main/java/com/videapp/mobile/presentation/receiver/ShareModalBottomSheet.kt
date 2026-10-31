@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,10 +48,14 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.videapp.mobile.core.preferences.AppPreferences
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -419,7 +424,50 @@ private fun MetadataReadyContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Auto-delete after sharing switch option
+        val autoDeleteEnabled by AppPreferences.getInstance(context).autoDeleteAfterShare.collectAsState()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(CardContainer)
+                .clickable {
+                    AppPreferences.getInstance(context).setAutoDeleteAfterShare(!autoDeleteEnabled)
+                }
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Switch(
+                checked = autoDeleteEnabled,
+                onCheckedChange = { checked ->
+                    AppPreferences.getInstance(context).setAutoDeleteAfterShare(checked)
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = TextPrimary,
+                    checkedTrackColor = AccentCyan,
+                    uncheckedThumbColor = TextSecondary,
+                    uncheckedTrackColor = CardContainerLight
+                )
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = "Eliminar archivo 10 minutos después de compartir",
+                    color = TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "Adaptativo: 5 min (<50 MB) o 10 min (≥50 MB)",
+                    color = TextSecondary,
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
 
         // Main CTA Button "Descargar Ahora"
         Button(
