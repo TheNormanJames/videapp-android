@@ -185,6 +185,11 @@ class ShareViewModel(
         }
     }
 
+    fun resetState() {
+        currentUrl = null
+        _uiState.value = ShareUiState.ExtractingUrl("")
+    }
+
     override fun onCleared() {
         downloadObserverJob?.cancel()
         super.onCleared()

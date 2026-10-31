@@ -1,7 +1,9 @@
 package com.videapp.mobile.presentation.main
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -29,14 +31,20 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,10 +52,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,16 +75,21 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.videapp.mobile.domain.model.DownloadedMedia
 import com.videapp.mobile.presentation.player.VideoPlayerDialog
+import com.videapp.mobile.presentation.receiver.ShareModalBottomSheet
+import com.videapp.mobile.presentation.receiver.ShareViewModel
 import com.videapp.mobile.presentation.theme.AccentCyan
+import com.videapp.mobile.presentation.theme.ButtonCta
 import com.videapp.mobile.presentation.theme.CardContainer
 import com.videapp.mobile.presentation.theme.CardContainerLight
 import com.videapp.mobile.presentation.theme.SheetBackground
 import com.videapp.mobile.presentation.theme.TextPrimary
 import com.videapp.mobile.presentation.theme.TextSecondary
 import com.videapp.mobile.presentation.theme.VideAPPTheme
+import kotlinx.coroutines.launch
 
 /**
- * Main Activity hosting the FastDownloader Media Library and Integrated Media3 ExoPlayer.
+ * Main Activity hosting the FastDownloader Media Library, Manual URL Downloader,
+ * and Integrated Media3 ExoPlayer.
  */
 class MainActivity : ComponentActivity() {
 
@@ -81,7 +98,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private val viewModel: MainViewModel by viewModels()
+    private val shareViewModel: ShareViewModel by viewModels()
 
+    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -91,14 +110,63 @@ class MainActivity : ComponentActivity() {
         setContent {
             VideAPPTheme {
                 val uiState by viewModel.uiState.collectAsState()
+                val shareUiState by shareViewModel.uiState.collectAsState()
+
+                var showAddUrlDialog by remember { mutableStateOf(false) }
+                var showDownloadSheet by remember { mutableStateOf(false) }
+
+                val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                val scope = rememberCoroutineScope()
 
                 MainGalleryScreen(
                     uiState = uiState,
                     onRefresh = { viewModel.loadVideos() },
+                    onAddUrlClick = { showAddUrlDialog = true },
                     onVideoClick = { media -> viewModel.selectVideo(media) },
                     onClosePlayer = { viewModel.selectVideo(null) },
                     onDeleteVideo = { media -> viewModel.deleteVideo(media) }
                 )
+
+                // Manual URL Input Dialog
+                if (showAddUrlDialog) {
+                    AddUrlDialog(
+                        onDismiss = { showAddUrlDialog = false },
+                        onSubmitUrl = { pastedUrl ->
+                            showAddUrlDialog = false
+                            shareViewModel.processSharedContent(pastedUrl)
+                            showDownloadSheet = true
+                        }
+                    )
+                }
+
+                // In-app Modal BottomSheet for downloading the entered URL
+                if (showDownloadSheet) {
+                    ShareModalBottomSheet(
+                        uiState = shareUiState,
+                        sheetState = sheetState,
+                        onDismiss = {
+                            scope.launch {
+                                sheetState.hide()
+                                showDownloadSheet = false
+                                shareViewModel.resetState()
+                                viewModel.loadVideos()
+                            }
+                        },
+                        onSelectPreset = { preset -> shareViewModel.selectPreset(preset) },
+                        onStartDownload = { shareViewModel.startDownload(this@MainActivity) },
+                        onCancelDownload = { shareViewModel.cancelDownload(this@MainActivity) },
+                        onRetry = { shareViewModel.retry() },
+                        onShareFile = { uri -> shareDownloadedFile(uri) },
+                        onViewVideo = { uri ->
+                            scope.launch {
+                                sheetState.hide()
+                                showDownloadSheet = false
+                                shareViewModel.resetState()
+                                viewModel.selectVideoByUri(uri.toString())
+                            }
+                        }
+                    )
+                }
             }
         }
     }
@@ -120,6 +188,20 @@ class MainActivity : ComponentActivity() {
             viewModel.selectVideoByUri(targetUriString)
         }
     }
+
+    private fun shareDownloadedFile(uri: Uri) {
+        try {
+            val mime = contentResolver.getType(uri) ?: "video/*"
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = mime
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(shareIntent, "Compartir video con..."))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error al compartir archivo: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -127,6 +209,7 @@ class MainActivity : ComponentActivity() {
 fun MainGalleryScreen(
     uiState: MainUiState,
     onRefresh: () -> Unit,
+    onAddUrlClick: () -> Unit,
     onVideoClick: (DownloadedMedia) -> Unit,
     onClosePlayer: () -> Unit,
     onDeleteVideo: (DownloadedMedia) -> Unit
@@ -168,11 +251,18 @@ fun MainGalleryScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onAddUrlClick) {
+                        Icon(
+                            imageVector = Icons.Default.Link,
+                            contentDescription = "Pegar enlace",
+                            tint = AccentCyan
+                        )
+                    }
                     IconButton(onClick = onRefresh) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refrescar",
-                            tint = AccentCyan
+                            tint = TextSecondary
                         )
                     }
                 },
@@ -180,6 +270,28 @@ fun MainGalleryScreen(
                     containerColor = SheetBackground,
                     titleContentColor = TextPrimary
                 )
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = onAddUrlClick,
+                containerColor = ButtonCta,
+                contentColor = TextPrimary,
+                shape = RoundedCornerShape(16.dp),
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Descargar por URL",
+                        modifier = Modifier.size(22.dp)
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Pegar Enlace",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
             )
         }
     ) { innerPadding ->
@@ -194,7 +306,10 @@ fun MainGalleryScreen(
                     LoadingGalleryState()
                 }
                 uiState.videos.isEmpty() -> {
-                    EmptyGalleryState(onRefresh = onRefresh)
+                    EmptyGalleryState(
+                        onRefresh = onRefresh,
+                        onAddUrlClick = onAddUrlClick
+                    )
                 }
                 else -> {
                     VideoGridContent(
@@ -239,7 +354,10 @@ private fun LoadingGalleryState() {
 }
 
 @Composable
-private fun EmptyGalleryState(onRefresh: () -> Unit) {
+private fun EmptyGalleryState(
+    onRefresh: () -> Unit,
+    onAddUrlClick: () -> Unit
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -278,7 +396,7 @@ private fun EmptyGalleryState(onRefresh: () -> Unit) {
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Comparte cualquier enlace desde YouTube, X, Facebook o Instagram hacia VideAPP para descargar de inmediato y sin anuncios.",
+                text = "Pega directamente cualquier enlace de YouTube, X, Facebook o Instagram, o usa el menú nativo 'Compartir'.",
                 color = TextSecondary,
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
@@ -286,6 +404,27 @@ private fun EmptyGalleryState(onRefresh: () -> Unit) {
             )
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            Button(
+                onClick = onAddUrlClick,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = ButtonCta)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Link,
+                    contentDescription = null,
+                    tint = TextPrimary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Pegar Enlace Ahora",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             IconButton(
                 onClick = onRefresh,
