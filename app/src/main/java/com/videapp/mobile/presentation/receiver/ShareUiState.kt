@@ -5,9 +5,9 @@ import com.videapp.mobile.domain.model.SocialPlatform
 import com.videapp.mobile.domain.model.VideoMetadata
 
 enum class QualityPreset(val label: String, val formatString: String) {
-    BEST("Mejor Calidad (720p)", "bestvideo[height<=720]+bestaudio/best[height<=720]/best"),
-    FAST_720P("720p Rápido (MP4)", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"),
-    AUDIO_ONLY("Solo Audio (MP3)", "bestaudio/best")
+    BEST("Máxima Calidad (1080p / Original)", "bestvideo+bestaudio/best"),
+    FAST_720P("Calidad Equilibrada (720p HD)", "bestvideo[height<=720]+bestaudio/bestvideo[width<=720]+bestaudio/best[height<=720]/best[width<=720]/best"),
+    AUDIO_ONLY("Solo Audio (MP3 / M4A)", "bestaudio/best")
 }
 
 sealed interface ShareUiState {

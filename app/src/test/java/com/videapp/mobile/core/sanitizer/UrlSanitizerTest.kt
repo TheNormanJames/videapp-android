@@ -58,6 +58,10 @@ class UrlSanitizerTest {
         val rawX = "https://x.com/SpaceX/status/9876543210?s=46"
         val sanitizedX = UrlSanitizer.sanitize(rawX)
         assertEquals("https://twitter.com/SpaceX/status/9876543210", sanitizedX)
+
+        val rawVideoSuffix = "https://x.com/user/status/123456789/video/1?s=20"
+        val sanitizedVideo = UrlSanitizer.sanitize(rawVideoSuffix)
+        assertEquals("https://twitter.com/user/status/123456789", sanitizedVideo)
     }
 
     @Test

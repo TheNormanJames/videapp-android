@@ -1,6 +1,7 @@
 package com.videapp.mobile.core.compression
 
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import android.util.Log
 import com.videapp.mobile.VideAppApplication
 import com.videapp.mobile.core.preferences.AppPreferences
@@ -111,19 +112,48 @@ object VideoCompressorMiddleware {
             "compressed_${System.currentTimeMillis()}_${sourceFile.name}"
         )
 
-        Log.i(TAG, "Executing FFmpeg compression: H.264 CRF 28, scale=-2:min(720,ih) on ${sourceFile.name}")
+        // Inspect video dimensions to preserve orientation and sharpness without unnecessary downscaling
+        var videoWidth = 0
+        var videoHeight = 0
+        try {
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(sourceFile.absolutePath)
+            videoWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            videoHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            retriever.release()
+        } catch (e: Throwable) {
+            Log.w(TAG, "Could not determine video dimensions via MediaMetadataRetriever: ${e.message}")
+        }
 
-        val ffmpegArgs = listOf(
+        val ffmpegArgs = mutableListOf(
             "-y",
             "-i", sourceFile.absolutePath,
             "-c:v", "libx264",
-            "-crf", "28",
-            "-preset", "fast",
-            "-vf", "scale=-2:min(720\\,ih)",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            tempOutputFile.absolutePath
+            "-crf", "22", // High visual fidelity (replaces pixelated CRF 28)
+            "-preset", "fast"
         )
+
+        // Smart orientation-aware scale: only downscale if the short edge exceeds 720p
+        if (videoWidth > 0 && videoHeight > 0) {
+            val isLandscape = videoWidth >= videoHeight
+            val shortSide = if (isLandscape) videoHeight else videoWidth
+            if (shortSide > 720) {
+                val scaleFilter = if (isLandscape) "scale=-2:720" else "scale=720:-2"
+                ffmpegArgs.add("-vf")
+                ffmpegArgs.add(scaleFilter)
+                Log.d(TAG, "Downscaling high-res video ($videoWidth x $videoHeight) using filter: $scaleFilter")
+            } else {
+                Log.d(TAG, "Video resolution ($videoWidth x $videoHeight) is already <= 720p. Preserving native resolution.")
+            }
+        }
+
+        ffmpegArgs.add("-c:a")
+        ffmpegArgs.add("aac")
+        ffmpegArgs.add("-b:a")
+        ffmpegArgs.add("192k")
+        ffmpegArgs.add(tempOutputFile.absolutePath)
+
+        Log.i(TAG, "Executing high-quality FFmpeg compression: H.264 CRF 22 on ${sourceFile.name}")
 
         val exitCode = FFmpeg.getInstance().execute(context, ffmpegArgs) { line ->
             Log.v(TAG, "ffmpeg output: $line")
@@ -132,12 +162,17 @@ object VideoCompressorMiddleware {
         if (exitCode == 0 && tempOutputFile.exists() && tempOutputFile.length() > 0L) {
             val originalSize = sourceFile.length()
             val compressedSize = tempOutputFile.length()
-            val reductionPercent = ((originalSize - compressedSize).toDouble() / originalSize.toDouble() * 100.0).toInt()
-            Log.i(TAG, "Video compressed successfully: $originalSize -> $compressedSize bytes ($reductionPercent% reduction)")
-
-            // Delete original uncompressed file and return compressed output
-            sourceFile.delete()
-            tempOutputFile
+            // If compression actually reduced file size, keep it; otherwise preserve original
+            if (compressedSize < originalSize) {
+                val reductionPercent = ((originalSize - compressedSize).toDouble() / originalSize.toDouble() * 100.0).toInt()
+                Log.i(TAG, "Video compressed successfully: $originalSize -> $compressedSize bytes ($reductionPercent% reduction)")
+                sourceFile.delete()
+                tempOutputFile
+            } else {
+                Log.i(TAG, "Original file is already smaller than compressed output ($originalSize vs $compressedSize bytes). Keeping original.")
+                tempOutputFile.delete()
+                sourceFile
+            }
         } else {
             Log.w(TAG, "FFmpeg returned code $exitCode. Keeping original uncompressed file.")
             if (tempOutputFile.exists()) {

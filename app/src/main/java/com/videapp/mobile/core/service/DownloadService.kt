@@ -18,6 +18,7 @@ import com.videapp.mobile.core.compression.VideoCompressorMiddleware
 import com.videapp.mobile.core.sanitizer.UrlSanitizer
 import com.videapp.mobile.data.mediastore.MediaStoreManager
 import com.videapp.mobile.domain.model.DownloadState
+import com.videapp.mobile.domain.model.SocialPlatform
 import com.videapp.mobile.domain.repository.DownloadRepository
 import com.videapp.mobile.presentation.main.MainActivity
 import com.yausername.youtubedl_android.YoutubeDL
@@ -132,12 +133,14 @@ class DownloadService : Service() {
 
         val sanitizedUrl = UrlSanitizer.sanitize(rawUrl) ?: rawUrl
         val taskId = UUID.randomUUID().toString()
+        val shortTaskId = taskId.substring(0, 8)
         currentProcessId = taskId
         isCancelledByUser = false
 
         // Temporary directory inside app's private cache
+        // Use %(title).80s and short task ID to prevent [Errno 36] File name too long
         val downloadDir = File(cacheDir, "downloads").apply { if (!exists()) mkdirs() }
-        val outputTemplate = File(downloadDir, "%(title)s-$taskId.%(ext)s").absolutePath
+        val outputTemplate = File(downloadDir, "%(title).80s-$shortTaskId.%(ext)s").absolutePath
 
         val initialNotification = buildProgressNotification(
             taskId = taskId,
@@ -161,60 +164,90 @@ class DownloadService : Service() {
                 // Defensive check to ensure engine is initialized on cold-start
                 VideAppApplication.ensureEngineInitialized(applicationContext)
 
-                val request = YoutubeDLRequest(sanitizedUrl).apply {
-                    addOption("-o", outputTemplate)
-                    addOption("--no-mtime")
-                    addOption("--no-playlist")
-                    addOption("--socket-timeout", "20")
-                    addOption("--extractor-args", "youtube:player_client=android,web;twitter:api=syndication")
-                    addOption("--no-check-certificates")
-                    addOption("--no-warnings")
+                val platform = UrlSanitizer.identifyPlatform(sanitizedUrl)
+                val isTwitter = platform == SocialPlatform.TWITTER_X
 
-                    if (!formatId.isNullOrBlank()) {
-                        addOption("-f", formatId)
-                    } else {
-                        // Default 720p resolution limit
-                        addOption("-f", DownloadRepository.DEFAULT_FORMAT_720P)
+                fun buildRequest(twitterApiMode: String? = null): YoutubeDLRequest {
+                    return YoutubeDLRequest(sanitizedUrl).apply {
+                        addOption("-o", outputTemplate)
+                        addOption("--trim-filenames", "100") // Truncate filenames to prevent filesystem limits
+                        addOption("--no-mtime")
+                        addOption("--no-playlist")
+                        addOption("--socket-timeout", "25")
+
+                        val extractorArgs = buildString {
+                            append("youtube:player_client=android,web")
+                            if (!twitterApiMode.isNullOrBlank()) {
+                                append(";twitter:api=$twitterApiMode")
+                            }
+                        }
+                        addOption("--extractor-args", extractorArgs)
+                        addOption("--no-check-certificates")
+                        addOption("--no-warnings")
+
+                        if (!formatId.isNullOrBlank()) {
+                            addOption("-f", formatId)
+                        } else {
+                            addOption("-f", DownloadRepository.DEFAULT_FORMAT_BEST)
+                        }
+                        addOption("-S", DownloadRepository.DEFAULT_SORT_QUALITY)
                     }
-                    // Sort criteria forcing max 720p, 30fps, h264
-                    addOption("-S", DownloadRepository.DEFAULT_SORT_720P)
                 }
 
-                Log.d(TAG, "Starting YoutubeDL execution for task $taskId: $sanitizedUrl")
+                Log.d(TAG, "Starting YoutubeDL execution for task $taskId (short: $shortTaskId): $sanitizedUrl")
 
-                YoutubeDL.getInstance().execute(request, taskId) { progress, etaInSeconds, line ->
-                    if (isCancelledByUser) return@execute
+                val progressCallback: (Float, Long, String) -> Unit = { progress, etaInSeconds, line ->
+                    if (!isCancelledByUser) {
+                        val safeProgress = progress.coerceIn(0f, 100f)
+                        val speed = extractSpeed(line)
+                        val etaFormatted = if (etaInSeconds > 0) {
+                            String.format("%02d:%02d", etaInSeconds / 60, etaInSeconds % 60)
+                        } else {
+                            "--:--"
+                        }
 
-                    val safeProgress = progress.coerceIn(0f, 100f)
-                    val speed = extractSpeed(line)
-                    val etaFormatted = if (etaInSeconds > 0) {
-                        String.format("%02d:%02d", etaInSeconds / 60, etaInSeconds % 60)
-                    } else {
-                        "--:--"
-                    }
-
-                    _downloadState.value = DownloadState.Downloading(
-                        taskId = taskId,
-                        title = videoTitle,
-                        progress = safeProgress,
-                        speed = speed,
-                        eta = etaFormatted
-                    )
-
-                    // Throttle notification updates (maximum twice per second to protect system UI performance)
-                    val now = System.currentTimeMillis()
-                    if (now - lastNotificationUpdateTime >= 500) {
-                        lastNotificationUpdateTime = now
-                        val statusText = "$safeProgress% • $speed • ETA $etaFormatted"
-                        val progressNotification = buildProgressNotification(
+                        _downloadState.value = DownloadState.Downloading(
                             taskId = taskId,
                             title = videoTitle,
-                            contentText = statusText,
-                            progress = safeProgress.toInt(),
-                            indeterminate = false
+                            progress = safeProgress,
+                            speed = speed,
+                            eta = etaFormatted
                         )
-                        notificationManager.notify(NOTIFICATION_ID, progressNotification)
+
+                        // Throttle notification updates (maximum twice per second to protect system UI performance)
+                        val now = System.currentTimeMillis()
+                        if (now - lastNotificationUpdateTime >= 500) {
+                            lastNotificationUpdateTime = now
+                            val statusText = "$safeProgress% • $speed • ETA $etaFormatted"
+                            val progressNotification = buildProgressNotification(
+                                taskId = taskId,
+                                title = videoTitle,
+                                contentText = statusText,
+                                progress = safeProgress.toInt(),
+                                indeterminate = false
+                            )
+                            notificationManager.notify(NOTIFICATION_ID, progressNotification)
+                        }
                     }
+                }
+
+                // Dual API strategy for Twitter:
+                // Attempt 1: Standard GraphQL API
+                // Attempt 2: Syndication API fallback if GraphQL reports no video
+                if (isTwitter) {
+                    try {
+                        YoutubeDL.getInstance().execute(buildRequest(twitterApiMode = null), taskId, progressCallback)
+                    } catch (e1: YoutubeDLException) {
+                        val msg1 = e1.message?.lowercase() ?: ""
+                        if (msg1.contains("no video") || msg1.contains("twitter") || msg1.contains("429")) {
+                            Log.w(TAG, "Twitter download attempt 1 failed ($msg1). Retrying with syndication fallback...")
+                            YoutubeDL.getInstance().execute(buildRequest(twitterApiMode = "syndication"), taskId, progressCallback)
+                        } else {
+                            throw e1
+                        }
+                    }
+                } else {
+                    YoutubeDL.getInstance().execute(buildRequest(), taskId, progressCallback)
                 }
 
                 if (isCancelledByUser) return@launch
@@ -230,7 +263,9 @@ class DownloadService : Service() {
                 )
                 notificationManager.notify(NOTIFICATION_ID, processingNotification)
 
-                val downloadedFiles = downloadDir.listFiles { _, name -> name.contains(taskId) }
+                val downloadedFiles = downloadDir.listFiles { _, name ->
+                    name.contains(shortTaskId) || name.contains(taskId)
+                }
                 val targetFile = downloadedFiles?.firstOrNull()
 
                 if (targetFile != null && targetFile.exists()) {
@@ -240,10 +275,14 @@ class DownloadService : Service() {
                         sourceFile = targetFile
                     )
 
-                    val cleanDisplayName = processedFile.name
-                        .replace("-$taskId", "")
-                        .replace("compressed_", "")
                     val extension = processedFile.extension.lowercase()
+                    val baseName = processedFile.nameWithoutExtension
+                        .replace("-$taskId", "")
+                        .replace("-$shortTaskId", "")
+                        .replace("compressed_", "")
+                        .take(90)
+                        .trimEnd('.', ' ', '-', '_')
+                    val cleanDisplayName = "$baseName.$extension"
                     val mimeType = if (extension == "mp3" || extension == "m4a") "audio/$extension" else "video/$extension"
 
                     val mediaStoreResult = mediaStoreManager.saveVideoToMediaStore(
@@ -310,9 +349,12 @@ class DownloadService : Service() {
 
         activeDownloadJob?.cancel()
 
-        // Clean any temp files with matching taskId
+        // Clean any temp files with matching taskId or shortTaskId
+        val shortId = taskId?.take(8) ?: ""
         val downloadDir = File(cacheDir, "downloads")
-        downloadDir.listFiles { _, name -> name.contains(taskId ?: "") }?.forEach { it.delete() }
+        downloadDir.listFiles { _, name ->
+            name.contains(taskId ?: "") || (shortId.isNotEmpty() && name.contains(shortId))
+        }?.forEach { it.delete() }
 
         _downloadState.value = DownloadState.Cancelled(taskId ?: "unknown")
 

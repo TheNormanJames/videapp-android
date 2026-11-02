@@ -100,6 +100,12 @@ object UrlSanitizer {
             // 2. Identify platform for domain-specific query handling
             val isYouTube = host.contains("youtube.com") || host == "youtu.be"
             val isFacebook = host.contains("facebook.com") || host.contains("fb.watch")
+            val isTwitter = host == "twitter.com"
+
+            // Clean Twitter/X status URLs (e.g. strip mobile app /video/1 or /photo/1 suffix)
+            if (isTwitter && path.contains("/status/")) {
+                path = path.replace(Regex("""/status/(\d+)/(?:video|photo)/\d+.*"""), "/status/$1")
+            }
 
             // 3. Filter query parameters
             val cleanedQuery = if (!query.isNullOrEmpty()) {

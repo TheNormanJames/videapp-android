@@ -1,9 +1,11 @@
 package com.videapp.mobile.data.repository
 
 import android.content.Context
+import android.util.Log
 import com.videapp.mobile.VideAppApplication
 import com.videapp.mobile.core.sanitizer.UrlSanitizer
 import com.videapp.mobile.domain.model.FormatOption
+import com.videapp.mobile.domain.model.SocialPlatform
 import com.videapp.mobile.domain.model.VideoMetadata
 import com.videapp.mobile.domain.repository.MetadataRepository
 import com.yausername.youtubedl_android.YoutubeDL
@@ -33,16 +35,42 @@ class MetadataRepositoryImpl : MetadataRepository {
 
             val sanitizedUrl = UrlSanitizer.sanitize(url) ?: url
             val platform = UrlSanitizer.identifyPlatform(sanitizedUrl)
+            val isTwitter = platform == SocialPlatform.TWITTER_X
 
-            val request = YoutubeDLRequest(sanitizedUrl).apply {
-                addOption("--no-playlist")
-                addOption("--socket-timeout", "15")
-                addOption("--extractor-args", "youtube:player_client=android,web;twitter:api=syndication")
-                addOption("--no-check-certificates")
-                addOption("--no-warnings")
+            fun buildRequest(twitterApiMode: String? = null): YoutubeDLRequest {
+                return YoutubeDLRequest(sanitizedUrl).apply {
+                    addOption("--no-playlist")
+                    addOption("--socket-timeout", "20")
+                    val extractorArgs = buildString {
+                        append("youtube:player_client=android,web")
+                        if (!twitterApiMode.isNullOrBlank()) {
+                            append(";twitter:api=$twitterApiMode")
+                        }
+                    }
+                    addOption("--extractor-args", extractorArgs)
+                    addOption("--no-check-certificates")
+                    addOption("--no-warnings")
+                }
             }
 
-            val rawInfo: VideoInfo = YoutubeDL.getInstance().getInfo(request)
+            // Dual API extraction strategy for Twitter:
+            // Attempt 1: Standard GraphQL API (extracts full resolution & threads)
+            // Attempt 2: Fallback to Syndication API if GraphQL fails or reports no video
+            val rawInfo: VideoInfo = if (isTwitter) {
+                try {
+                    YoutubeDL.getInstance().getInfo(buildRequest(twitterApiMode = null))
+                } catch (e1: YoutubeDLException) {
+                    val msg1 = e1.message?.lowercase() ?: ""
+                    if (msg1.contains("no video") || msg1.contains("twitter") || msg1.contains("429")) {
+                        Log.w("MetadataRepo", "Twitter GraphQL extraction failed ($msg1). Retrying with syndication API fallback...")
+                        YoutubeDL.getInstance().getInfo(buildRequest(twitterApiMode = "syndication"))
+                    } else {
+                        throw e1
+                    }
+                }
+            } else {
+                YoutubeDL.getInstance().getInfo(buildRequest())
+            }
 
             val metadata = VideoMetadata(
                 id = rawInfo.id ?: System.currentTimeMillis().toString(),
@@ -131,6 +159,8 @@ class MetadataRepositoryImpl : MetadataRepository {
                 "La plataforma requiere inicio de sesión para acceder a este contenido."
             msg.contains("video unavailable") || msg.contains("not available") ->
                 "El video no está disponible o ha sido eliminado."
+            msg.contains("no video could be found") || msg.contains("no video") ->
+                "No se localizó un video disponible en este tweet. Comprueba que la publicación contenga un video nativo y que no sea contenido privado o restringido."
             msg.contains("unsupported url") ->
                 "Enlace no soportado o formato de URL no reconocido."
             msg.contains("bot") || msg.contains("captcha") ->
